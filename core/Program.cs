@@ -11,7 +11,7 @@ namespace PdfDecryptor {
     public class Program {
         private const string _usage = 
 @"Usage: PdfDecryptor.exe encrypted_input.pdf decrypted_output_path.pdf pwd1 pwd2...
-Returns True if the input was decrypted.";
+Returns True if the input was decrypted or removed pages with no attachments.";
 
         public static int Main(string[] args) {
             if (!ValidateArgs(args)) return -1;
@@ -21,7 +21,10 @@ Returns True if the input was decrypted.";
             var passwords = args.Skip(2).ToArray();
 
             try {
-                if (TryOpenWithoutPassword(encryptedFile)) { WriteLine(false); return 0; }
+                if (TryOpenWithoutPassword(encryptedFile, decryptedFile, out bool useNewFile)) {
+                    WriteLine(useNewFile); 
+                    return 0;
+                }
 
                 WriteLine(true);
 
@@ -50,22 +53,36 @@ Returns True if the input was decrypted.";
             using (var writer = new PdfWriter(decryptedFilePath))
             using (var reader = new PdfReader(encryptedPath, readerProperties))
             using (var doc = new PdfDocument(reader, writer)) {
+                CheckExcedentPagesAndRemove(doc);
                 doc.Close();
                 reader.Close();
             }
             return true;
         }
 
-        private static bool TryOpenWithoutPassword(string nonEncryptedFile) {
+        private static bool TryOpenWithoutPassword(string nonEncryptedFile, string decryptedFilePath, 
+            out bool returnNewFile) {
+            returnNewFile = false;
             try {
                 using (var reader = new PdfReader(nonEncryptedFile))
-                using (var doc = new PdfDocument(reader)) {
+                using (var writer = new PdfWriter(decryptedFilePath))
+                using (var doc = new PdfDocument(reader, writer)) {
+                    returnNewFile = CheckExcedentPagesAndRemove(doc);
                     doc.Close();
                     reader.Close();
                     return true;
                 }
             }
-            catch(Exception) { return false; }
+            catch(Exception e) { return false; }
+        }
+
+        private static bool CheckExcedentPagesAndRemove(PdfDocument doc){
+            var pagesCount = doc.GetNumberOfPages();
+            if (pagesCount <= 10) return false;
+            for (var i = pagesCount; i > 1; i--)
+                if (!doc.GetPage(i).GetAnnotations().Any())
+                    doc.RemovePage(i);
+            return true;
         }
     }
 }
